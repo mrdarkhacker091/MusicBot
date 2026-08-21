@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-
 """
 🎵 ADVANCED MUSIC BOT - Final Production Version
-Created by ❦ ᴍʀ ᴅᴀʀᴋ<\\>ʜᴀᴄᴋᴇʀ 🫟
+Created by ❦ ᴍʀ ᴅᴀʀᴋ<\>ʜᴀᴄᴋᴇʀ
 """
 
 import os
@@ -38,7 +37,7 @@ from telegram.constants import ParseMode
 # CONFIGURATION
 # ═══════════════════════════════════════════════════════════════
 
-TOKEN = "8350984585:AAFSm-9J9MTrwluT1WQk6eHhPplSoBR6c0k"   # replace with your actual token
+TOKEN = "8350984585:AAFSm-9J9MTrwluT1WQk6eHhPplSoBR6c0k"
 OWNER_ID = 8502323501
 BOT_USERNAME = "All_MusicDownloader_Bot"
 
@@ -73,46 +72,46 @@ def init_db():
     conn.execute("PRAGMA journal_mode=WAL")
     cursor = conn.cursor()
     cursor.executescript("""
-    CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY,
-        username TEXT,
-        first_name TEXT,
-        points INTEGER DEFAULT 0,
-        premium_expire TEXT,
-        downloads_today INTEGER DEFAULT 0,
-        total_downloads INTEGER DEFAULT 0,
-        last_reset TEXT,
-        referrer INTEGER,
-        joined_at TEXT DEFAULT CURRENT_TIMESTAMP,
-        is_banned INTEGER DEFAULT 0
-    );
-    CREATE TABLE IF NOT EXISTS favorites (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER,
-        video_id TEXT,
-        title TEXT,
-        artist TEXT,
-        thumbnail_url TEXT,
-        added_at TEXT DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(user_id, video_id)
-    );
-    CREATE TABLE IF NOT EXISTS downloads (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER,
-        video_id TEXT,
-        title TEXT,
-        downloaded_at TEXT DEFAULT CURRENT_TIMESTAMP,
-        file_size INTEGER,
-        duration INTEGER
-    );
-    CREATE TABLE IF NOT EXISTS referrals (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        referrer_id INTEGER,
-        referred_id INTEGER,
-        points_awarded INTEGER DEFAULT 10,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(referrer_id, referred_id)
-    );
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY,
+            username TEXT,
+            first_name TEXT,
+            points INTEGER DEFAULT 0,
+            premium_expire TEXT,
+            downloads_today INTEGER DEFAULT 0,
+            total_downloads INTEGER DEFAULT 0,
+            last_reset TEXT,
+            referrer INTEGER,
+            joined_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            is_banned INTEGER DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS favorites (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            video_id TEXT,
+            title TEXT,
+            artist TEXT,
+            thumbnail_url TEXT,
+            added_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, video_id)
+        );
+        CREATE TABLE IF NOT EXISTS downloads (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            video_id TEXT,
+            title TEXT,
+            downloaded_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            file_size INTEGER,
+            duration INTEGER
+        );
+        CREATE TABLE IF NOT EXISTS referrals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            referrer_id INTEGER,
+            referred_id INTEGER,
+            points_awarded INTEGER DEFAULT 10,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(referrer_id, referred_id)
+        );
     """)
     conn.commit()
     conn.close()
@@ -222,11 +221,11 @@ def get_main_menu_keyboard(user_id: int) -> ReplyKeyboardMarkup:
 
 def get_ydl_opts(output_path: str = None, audio_only: bool = True) -> dict:
     opts = {
-        "quiet": True,
-        "no_warnings": True,
+        "quiet": False,
+        "no_warnings": False,
         "noplaylist": True,
         "geo_bypass": True,
-        "ignoreerrors": False,          # important: let errors raise
+        "ignoreerrors": False,
         "no_check_certificate": True,
         "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
         "extractor_args": {
@@ -236,9 +235,10 @@ def get_ydl_opts(output_path: str = None, audio_only: bool = True) -> dict:
             }
         }
     }
+
     if COOKIES_FILE.exists():
         opts["cookies"] = str(COOKIES_FILE)
-    
+
     if audio_only:
         opts["format"] = "bestaudio[ext=m4a]/bestaudio/best"
         opts["postprocessors"] = [{
@@ -246,11 +246,17 @@ def get_ydl_opts(output_path: str = None, audio_only: bool = True) -> dict:
             "preferredcodec": "mp3",
             "preferredquality": "192",
         }]
-        opts["outtmpl"] = output_path or "%(title)s.%(ext)s"
+        if output_path:
+            opts["outtmpl"] = output_path
+        else:
+            opts["outtmpl"] = str(DOWNLOADS_DIR / "%(id)s_%(title)s")
     else:
-        # Video: best video + best audio
         opts["format"] = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
-        opts["outtmpl"] = output_path or "%(title)s.%(ext)s"
+        if output_path:
+            opts["outtmpl"] = output_path
+        else:
+            opts["outtmpl"] = str(DOWNLOADS_DIR / "%(id)s_%(title)s")
+
     return opts
 
 def search_music(query: str, max_results: int = 50) -> List[Dict]:
@@ -258,9 +264,11 @@ def search_music(query: str, max_results: int = 50) -> List[Dict]:
         opts = get_ydl_opts(audio_only=False)
         opts["extract_flat"] = True
         opts["playlistend"] = max_results
+        
         with yt_dlp.YoutubeDL(opts) as ydl:
             result = ydl.extract_info(f"ytsearch{max_results}:{query}", download=False)
             entries = result.get("entries", []) if result else []
+            
             valid = []
             for entry in entries:
                 if entry and entry.get("id") and entry.get("title"):
@@ -282,33 +290,55 @@ def search_music(query: str, max_results: int = 50) -> List[Dict]:
         return []
 
 async def download_media_async(video_id: str, title: str, audio_only: bool = True) -> Optional[Path]:
+    """Download media from YouTube. Returns Path to downloaded file or None on failure."""
     loop = asyncio.get_event_loop()
     file_id = hashlib.md5(f"{video_id}{time.time()}".encode()).hexdigest()[:12]
-    ext = "mp3" if audio_only else "mp4"
-    output_path = str(DOWNLOADS_DIR / f"{file_id}.%(ext)s")
-    
+
     def _download():
         try:
+            output_path = str(DOWNLOADS_DIR / file_id)
             opts = get_ydl_opts(output_path=output_path, audio_only=audio_only)
             url = f"https://youtube.com/watch?v={video_id}"
+            
+            logger.info(f"Starting download: {url}")
+            
             with yt_dlp.YoutubeDL(opts) as ydl:
-                ydl.download([url])
-            # Find the resulting file
-            for f in DOWNLOADS_DIR.glob(f"{file_id}.*"):
-                if f.suffix in [".mp3", ".m4a", ".webm", ".opus"] if audio_only else [".mp4", ".mkv", ".webm"]:
-                    return f
+                info = ydl.extract_info(url, download=True)
+                logger.info(f"Download completed for {video_id}")
+            
+            # Search for the actual downloaded file
+            search_patterns = [
+                f"{file_id}.mp3",
+                f"{file_id}.m4a",
+                f"{file_id}.mp4",
+                f"{file_id}.mkv",
+                f"{file_id}.webm",
+                f"{file_id}.*"
+            ]
+            
+            for pattern in search_patterns:
+                matches = list(DOWNLOADS_DIR.glob(pattern))
+                if matches:
+                    result_file = matches[0]
+                    if result_file.exists() and result_file.stat().st_size > 0:
+                        logger.info(f"Found downloaded file: {result_file}")
+                        return result_file
+            
+            logger.error(f"No file found after download for video_id={video_id}")
             return None
+            
         except Exception as e:
-            logger.error(f"Download error: {e}")
-            raise  # re-raise so caller can see the real error
+            logger.error(f"Download error in _download: {type(e).__name__}: {e}")
+            raise
+
     try:
-        result = await asyncio.wait_for(loop.run_in_executor(None, _download), timeout=120.0)
+        result = await asyncio.wait_for(loop.run_in_executor(None, _download), timeout=180.0)
         return result
     except asyncio.TimeoutError:
-        logger.error("Download timed out after 120 seconds")
+        logger.error(f"Download timeout for {video_id}")
         return None
     except Exception as e:
-        logger.error(f"Download crashed: {e}")
+        logger.error(f"Download async error: {type(e).__name__}: {e}")
         return None
 
 async def download_thumbnail(thumbnail_url: str, video_id: str) -> Optional[Path]:
@@ -333,11 +363,12 @@ async def download_thumbnail(thumbnail_url: str, video_id: str) -> Optional[Path
 def fetch_lyrics(title: str, artist: str = "") -> str:
     title = title.strip()
     artist = artist.strip()
+    
     if not artist and " - " in title:
         parts = title.split(" - ", 1)
         artist = parts[0].strip()
         title = parts[1].strip()
-    
+
     # Try lyrics.ovh
     try:
         if artist and title:
@@ -349,7 +380,7 @@ def fetch_lyrics(title: str, artist: str = "") -> str:
                     return data["lyrics"]
     except:
         pass
-    
+
     # LRCLIB
     try:
         search_term = f"{artist} {title}".strip()
@@ -363,7 +394,7 @@ def fetch_lyrics(title: str, artist: str = "") -> str:
                     return lyrics
     except:
         pass
-    
+
     # Genius scraping
     try:
         query = f"{artist} {title}".strip()
@@ -371,7 +402,6 @@ def fetch_lyrics(title: str, artist: str = "") -> str:
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
         r = requests.get(search_url, headers=headers, timeout=8)
         if r.status_code == 200:
-            # Find first result link
             match = re.search(r'<a[^>]+href="([^"]+)"[^>]*data-search-result="true"', r.text)
             if match:
                 song_url = match.group(1)
@@ -379,7 +409,6 @@ def fetch_lyrics(title: str, artist: str = "") -> str:
                     song_url = "https://genius.com" + song_url
                 r2 = requests.get(song_url, headers=headers, timeout=8)
                 if r2.status_code == 200:
-                    # extract from data-lyrics-container
                     lyrics_match = re.search(r'<div[^>]*data-lyrics-container="true"[^>]*>(.*?)</div>', r2.text, re.DOTALL)
                     if lyrics_match:
                         raw = lyrics_match.group(1)
@@ -389,7 +418,7 @@ def fetch_lyrics(title: str, artist: str = "") -> str:
                             return raw
     except:
         pass
-    
+
     return f"🎵 *{title}* — *{artist}*\n\n_Lyrics not found in our databases._"
 
 # ═══════════════════════════════════════════════════════════════
@@ -406,7 +435,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
     update_user(user_id, username=user.username, first_name=user.first_name)
-    
+
     # referral
     if context.args:
         try:
@@ -429,7 +458,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     conn.close()
         except:
             pass
-    
+
     text = (
         f"🎵 *Welcome to Advanced Music Bot!*\n\n"
         f"👋 Hi *{user.first_name}*!\n\n"
@@ -614,12 +643,14 @@ async def show_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def song_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     query = update.message.text.strip()
+    
     if len(query) < 2:
         await update.message.reply_text("⚠️ Please enter at least 2 characters to search.", reply_markup=get_main_menu_keyboard(user_id))
         return
 
     msg = await update.message.reply_text("🔎 *Searching...*", parse_mode=ParseMode.MARKDOWN)
     results = await asyncio.get_event_loop().run_in_executor(None, search_music, query)
+    
     if not results:
         await msg.edit_text(
             "❌ *No results found.*\n\n💡 Try different keywords or artist name.",
@@ -630,11 +661,13 @@ async def song_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     chat_id = update.message.chat_id
     search_cache[chat_id] = results
+
     keyboard = []
     for i, r in enumerate(results[:20]):
         duration = f" ⏱{r['duration']//60}:{r['duration']%60:02d}" if r.get('duration') else ""
         title = r['title'][:45] + "..." if len(r['title']) > 45 else r['title']
         keyboard.append([InlineKeyboardButton(f"🎵 {title}{duration}", callback_data=f"song_{i}")])
+
     if len(results) > 20:
         keyboard.append([InlineKeyboardButton("➕ More Results", callback_data=f"more_20")])
     keyboard.append([InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_menu")])
@@ -666,6 +699,7 @@ async def song_info_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     user_id = q.from_user.id
     index = int(q.data.split("_")[1])
     results = search_cache.get(chat_id)
+
     if not results or index >= len(results):
         await q.edit_message_text("⚠️ Song expired. Please search again.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_to_menu")]]))
         return
@@ -692,7 +726,7 @@ async def download_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     await q.answer("⬇️ Starting download...")
     user_id = q.from_user.id
     chat_id = q.message.chat_id
-    index = int(q.data.split("_")[2])  # format: download_audio_0 or download_video_0
+    index = int(q.data.split("_")[2])
 
     can_dl, remaining = can_download(user_id)
     if not can_dl:
@@ -709,6 +743,7 @@ async def download_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, 
 
     try:
         file_path = await download_media_async(video["id"], video["title"], audio_only=audio_only)
+        
         if not file_path or not file_path.exists():
             await status_msg.edit_text("❌ *Download failed.*\n\nPlease try again or contact support.", parse_mode=ParseMode.MARKDOWN)
             return
@@ -726,7 +761,6 @@ async def download_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, 
                     parse_mode=ParseMode.MARKDOWN
                 )
         else:
-            # video
             thumb_path = await download_thumbnail(video.get("thumbnail", ""), video["id"])
             with open(file_path, "rb") as f:
                 await q.message.reply_video(
@@ -752,6 +786,7 @@ async def lyrics_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = q.message.chat_id
     index = int(q.data.split("_")[1])
     results = search_cache.get(chat_id)
+
     if not results or index >= len(results):
         await q.message.reply_text("⚠️ Song expired. Please search again.")
         return
@@ -761,8 +796,10 @@ async def lyrics_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     title = video["title"]
     artist = video.get("uploader", "")
     lyrics = await asyncio.get_event_loop().run_in_executor(None, fetch_lyrics, title, artist)
+
     if len(lyrics) > 4000:
         lyrics = lyrics[:3997] + "..."
+
     await status.delete()
     await q.message.reply_text(
         f"🎵 *{video['title'][:100]}*\n\n📜 *Lyrics:*\n\n```\n{lyrics}\n```",
@@ -780,6 +817,7 @@ async def more_tracks_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     chat_id = q.message.chat_id
     offset = int(q.data.split("_")[1])
     results = search_cache.get(chat_id)
+
     if not results:
         await q.edit_message_text("⚠️ Search expired. Please search again.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_to_menu")]]))
         return
@@ -790,6 +828,7 @@ async def more_tracks_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         duration = f" ⏱{r['duration']//60}:{r['duration']%60:02d}" if r.get('duration') else ""
         title = r['title'][:45] + "..." if len(r['title']) > 45 else r['title']
         keyboard.append([InlineKeyboardButton(f"🎵 {title}{duration}", callback_data=f"song_{i}")])
+
     if offset + 20 < len(results):
         keyboard.append([InlineKeyboardButton("➕ More Results", callback_data=f"more_{offset+20}")])
     keyboard.append([InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_menu")])
@@ -800,14 +839,17 @@ async def page_navigation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await q.answer()
     chat_id = q.message.chat_id
     results = search_cache.get(chat_id)
+
     if not results:
         await q.edit_message_text("⚠️ Search expired.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_to_menu")]]))
         return
+
     keyboard = []
     for i, r in enumerate(results[:20]):
         duration = f" ⏱{r['duration']//60}:{r['duration']%60:02d}" if r.get('duration') else ""
         title = r['title'][:45] + "..." if len(r['title']) > 45 else r['title']
         keyboard.append([InlineKeyboardButton(f"🎵 {title}{duration}", callback_data=f"song_{i}")])
+
     if len(results) > 20:
         keyboard.append([InlineKeyboardButton("➕ More Results", callback_data="more_20")])
     keyboard.append([InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_menu")])
@@ -818,11 +860,11 @@ async def trend_song_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     await q.answer()
     video_id = q.data.split("_", 1)[1]
     msg = await q.message.reply_text("🔎 *Loading...*", parse_mode=ParseMode.MARKDOWN)
-    
-    # Get info directly from video ID
+
     try:
         opts = get_ydl_opts(audio_only=False)
         opts["extract_flat"] = True
+        
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(f"https://youtube.com/watch?v={video_id}", download=False)
             if info:
@@ -884,12 +926,14 @@ def main():
     print("""
 ╔══════════════════════════════════════════════════════════════╗
 ║           🎵 ADVANCED MUSIC BOT 🎵                           ║
-║   Created by ❦ ᴍʀ ᴅᴀʀᴋ<\\>ʜᴀᴄᴋᴇʀ 🫟                        ║
+║   Created by ❦ ᴍʀ ᴅᴀʀᴋ<\>ʜᴀᴄᴋᴇʀ                        ║
 ╚══════════════════════════════════════════════════════════════╝
     """)
+
     if not COOKIES_FILE.exists():
         print("⚠️ No cookie file found. YouTube downloads may be blocked.")
         print(f"   Export cookies from browser to: {COOKIES_FILE}\n")
+
     print("🤖 Bot is running... Press Ctrl+C to stop.\n")
 
     app = Application.builder().token(TOKEN).build()
@@ -907,7 +951,6 @@ def main():
     # Callback handlers (inline)
     app.add_handler(CallbackQueryHandler(back_to_menu, pattern="^back_to_menu$"))
     app.add_handler(CallbackQueryHandler(song_info_callback, pattern="^song_"))
-    # download callbacks for audio and video
     app.add_handler(CallbackQueryHandler(lambda u,c: download_callback(u,c,True), pattern="^download_audio_"))
     app.add_handler(CallbackQueryHandler(lambda u,c: download_callback(u,c,False), pattern="^download_video_"))
     app.add_handler(CallbackQueryHandler(lyrics_callback, pattern="^lyrics_"))
