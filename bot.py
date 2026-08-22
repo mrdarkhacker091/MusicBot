@@ -264,54 +264,63 @@ def get_ydl_opts(output_path: str = None, audio_only: bool = True) -> dict:
 
 def search_music(query: str, max_results: int = 50) -> List[Dict]:
     try:
+        # Search via YouTube's web interface, extract video IDs
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+        
+        search_url = f"https://www.youtube.com/results?search_query={requests.utils.quote(query)}&sp=EgIQAQ%3D%3D"
+        logger.info(f"Searching YouTube: {query}")
+        
+        r = requests.get(search_url, headers=headers, timeout=10)
+        if r.status_code != 200:
+            logger.error(f"Search HTTP failed: {r.status_code}")
+            return []
+        
+        # Extract video IDs from search results
+        video_id_pattern = r'"videoId":"([a-zA-Z0-9_-]{11})"'
+        video_ids = re.findall(video_id_pattern, r.text)
+        video_ids = list(dict.fromkeys(video_ids))[:max_results]  # Remove dupes, limit
+        
+        logger.info(f"Found {len(video_ids)} video IDs from search")
+        
+        if not video_ids:
+            logger.warning(f"No video IDs extracted from search results")
+            return []
+        
+        # Fetch metadata for each video
+        valid = []
         opts = {
             "quiet": True,
             "no_warnings": True,
-            "noplaylist": True,
-            "default_search": "ytsearch",
-            "socket_timeout": 30,
+            "socket_timeout": 10,
             "http_headers": {
-                "User-Agent": "com.google.android.youtube/19.29.39 (Linux; U; Android 13; en_US)",
-                "Accept-Language": "en-US,en;q=0.9",
-            },
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["ios", "android", "web"],
-                }
-            },
-            "extract_flat": True,
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            }
         }
         
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            search_query = f"ytsearch{max_results}:{query}"
-            logger.info(f"Searching: {search_query}")
-            result = ydl.extract_info(search_query, download=False)
-            entries = result.get("entries", []) if result else []
-            
-            logger.info(f"Found {len(entries)} entries for query: {query}")
-            
-            valid = []
-            for entry in entries:
-                try:
-                    if entry and entry.get("id") and entry.get("title"):
-                        duration = entry.get("duration", 0)
-                        if duration:
-                            duration = int(duration)
+        for video_id in video_ids:
+            try:
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    info = ydl.extract_info(f"https://youtube.com/watch?v={video_id}", download=False)
+                    if info:
                         valid.append({
-                            "id": entry["id"],
-                            "title": entry.get("title", "Unknown"),
-                            "duration": duration,
-                            "uploader": entry.get("uploader", "Unknown"),
-                            "view_count": entry.get("view_count", 0),
-                            "thumbnail": entry.get("thumbnail", ""),
-                            "url": f"https://youtube.com/watch?v={entry['id']}"
+                            "id": info.get("id", video_id),
+                            "title": info.get("title", "Unknown"),
+                            "duration": int(info.get("duration", 0)),
+                            "uploader": info.get("uploader", "Unknown"),
+                            "view_count": info.get("view_count", 0),
+                            "thumbnail": info.get("thumbnail", ""),
+                            "url": f"https://youtube.com/watch?v={info.get('id', video_id)}"
                         })
-                except Exception as e:
-                    logger.warning(f"Error parsing entry: {e}")
-                    continue
-            
-            logger.info(f"Returning {len(valid)} valid results")
-            return valid
+            except Exception as e:
+                logger.warning(f"Error fetching metadata for {video_id}: {e}")
+                continue
+        
+        logger.info(f"Returning {len(valid)} valid results with metadata")
+        return valid
+        
     except Exception as e:
         logger.error(f"Search error: {type(e).__name__}: {e}")
         return []
