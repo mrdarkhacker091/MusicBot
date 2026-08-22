@@ -227,20 +227,23 @@ def get_ydl_opts(output_path: str = None, audio_only: bool = True) -> dict:
         "geo_bypass": True,
         "ignoreerrors": False,
         "no_check_certificate": True,
-        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+        "socket_timeout": 30,
+        "http_headers": {
+            "User-Agent": "com.google.android.youtube/19.29.39 (Linux; U; Android 13; en_US)",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept": "text/html,application/xhtml+xml",
+        },
         "extractor_args": {
             "youtube": {
-                "player_client": ["android", "web"],
+                "player_client": ["ios", "android", "web"],
+                "player_skip": ["js"],
                 "skip": ["hls", "dash"]
             }
         }
     }
 
-    if COOKIES_FILE.exists():
-        opts["cookies"] = str(COOKIES_FILE)
-
     if audio_only:
-        opts["format"] = "bestaudio[ext=m4a]/bestaudio/best"
+        opts["format"] = "bestaudio[ext=m4a]/bestaudio[asr<=48000]/best[asr<=48000]/bestaudio/best"
         opts["postprocessors"] = [{
             "key": "FFmpegExtractAudio",
             "preferredcodec": "mp3",
@@ -251,7 +254,7 @@ def get_ydl_opts(output_path: str = None, audio_only: bool = True) -> dict:
         else:
             opts["outtmpl"] = str(DOWNLOADS_DIR / "%(id)s_%(title)s")
     else:
-        opts["format"] = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+        opts["format"] = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
         if output_path:
             opts["outtmpl"] = output_path
         else:
