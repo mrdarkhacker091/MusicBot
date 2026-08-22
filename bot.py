@@ -264,32 +264,56 @@ def get_ydl_opts(output_path: str = None, audio_only: bool = True) -> dict:
 
 def search_music(query: str, max_results: int = 50) -> List[Dict]:
     try:
-        opts = get_ydl_opts(audio_only=False)
-        opts["extract_flat"] = True
-        opts["playlistend"] = max_results
+        opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "noplaylist": True,
+            "default_search": "ytsearch",
+            "socket_timeout": 30,
+            "http_headers": {
+                "User-Agent": "com.google.android.youtube/19.29.39 (Linux; U; Android 13; en_US)",
+                "Accept-Language": "en-US,en;q=0.9",
+            },
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["ios", "android", "web"],
+                }
+            },
+            "extract_flat": True,
+        }
         
         with yt_dlp.YoutubeDL(opts) as ydl:
-            result = ydl.extract_info(f"ytsearch{max_results}:{query}", download=False)
+            search_query = f"ytsearch{max_results}:{query}"
+            logger.info(f"Searching: {search_query}")
+            result = ydl.extract_info(search_query, download=False)
             entries = result.get("entries", []) if result else []
+            
+            logger.info(f"Found {len(entries)} entries for query: {query}")
             
             valid = []
             for entry in entries:
-                if entry and entry.get("id") and entry.get("title"):
-                    duration = entry.get("duration", 0)
-                    if duration:
-                        duration = int(duration)
-                    valid.append({
-                        "id": entry["id"],
-                        "title": entry["title"],
-                        "duration": duration,
-                        "uploader": entry.get("uploader", "Unknown"),
-                        "view_count": entry.get("view_count", 0),
-                        "thumbnail": entry.get("thumbnail", ""),
-                        "url": f"https://youtube.com/watch?v={entry['id']}"
-                    })
+                try:
+                    if entry and entry.get("id") and entry.get("title"):
+                        duration = entry.get("duration", 0)
+                        if duration:
+                            duration = int(duration)
+                        valid.append({
+                            "id": entry["id"],
+                            "title": entry.get("title", "Unknown"),
+                            "duration": duration,
+                            "uploader": entry.get("uploader", "Unknown"),
+                            "view_count": entry.get("view_count", 0),
+                            "thumbnail": entry.get("thumbnail", ""),
+                            "url": f"https://youtube.com/watch?v={entry['id']}"
+                        })
+                except Exception as e:
+                    logger.warning(f"Error parsing entry: {e}")
+                    continue
+            
+            logger.info(f"Returning {len(valid)} valid results")
             return valid
     except Exception as e:
-        logger.error(f"Search error: {e}")
+        logger.error(f"Search error: {type(e).__name__}: {e}")
         return []
 
 async def download_media_async(video_id: str, title: str, audio_only: bool = True) -> Optional[Path]:
