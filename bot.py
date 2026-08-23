@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-
 """
 🎵 ADVANCED MUSIC BOT - FIXED
 Created by ❦ ᴍʀ ᴅᴀʀᴋ<\\>ʜᴀᴄᴋᴇʀ 🫟
@@ -68,7 +67,7 @@ def get_main_menu_keyboard(user_id: int) -> ReplyKeyboardMarkup:
     points = user[1] if user else 0
     downloads = user[3] if user else 0
     premium_text = "💎 Premium" if is_premium(user) else "⭐ Upgrade"
-    
+
     keyboard = [
         ["🎵 Search Music", "🔥 Trending"],
         [f"📊 Account ({points} pts)", f"⬇️ {downloads}/{DOWNLOAD_LIMIT}"],
@@ -139,10 +138,10 @@ def get_ydl_opts(output_path=None, audio_only=True):
             }
         }
     }
-    
+
     if COOKIES_FILE.exists():
         opts["cookies"] = str(COOKIES_FILE)
-    
+
     if audio_only:
         opts["format"] = "bestaudio[ext=m4a]/bestaudio/best"
         opts["postprocessors"] = [{
@@ -154,7 +153,7 @@ def get_ydl_opts(output_path=None, audio_only=True):
     else:
         opts["format"] = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
         opts["outtmpl"] = output_path or "%(title)s.%(ext)s"
-    
+
     return opts
 
 def search_music(query, max_results=50):
@@ -190,7 +189,7 @@ async def download_media_async(video_id, title, audio_only=True):
     file_id = hashlib.md5(f"{video_id}{time.time()}".encode()).hexdigest()[:12]
     ext = "mp3" if audio_only else "mp4"
     output_path = str(DOWNLOADS_DIR / f"{file_id}.%(ext)s")
-    
+
     def _download():
         try:
             opts = get_ydl_opts(output_path=output_path, audio_only=audio_only)
@@ -208,6 +207,7 @@ async def download_media_async(video_id, title, audio_only=True):
         except Exception as e:
             print(f"Download error: {e}")
             raise
+
     try:
         result = await asyncio.wait_for(loop.run_in_executor(None, _download), timeout=120.0)
         return result
@@ -226,8 +226,8 @@ def fetch_lyrics(title, artist=""):
         parts = title.split(" - ", 1)
         artist = parts[0].strip()
         title = parts[1].strip()
-    
-    # Try lyrics.ovh
+
+    # 1) lyrics.ovh
     try:
         if artist and title:
             url = f"https://api.lyrics.ovh/v1/{requests.utils.quote(artist)}/{requests.utils.quote(title)}"
@@ -238,8 +238,8 @@ def fetch_lyrics(title, artist=""):
                     return data["lyrics"]
     except:
         pass
-    
-    # LRCLIB
+
+    # 2) LRCLIB
     try:
         search_term = f"{artist} {title}".strip()
         url = f"https://lrclib.net/api/search?q={requests.utils.quote(search_term)}"
@@ -252,8 +252,8 @@ def fetch_lyrics(title, artist=""):
                     return lyrics
     except:
         pass
-    
-    # Genius scraping
+
+    # 3) Genius scraping
     try:
         query = f"{artist} {title}".strip()
         search_url = f"https://genius.com/search?q={requests.utils.quote(query)}"
@@ -276,7 +276,37 @@ def fetch_lyrics(title, artist=""):
                             return raw
     except:
         pass
-    
+
+    # 4) AZLyrics (fallback)
+    try:
+        query = f"{artist} {title}".strip().lower().replace(" ", "")
+        url = f"https://www.azlyrics.com/lyrics/{query}.html"
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+        r = requests.get(url, headers=headers, timeout=8)
+        if r.status_code == 200:
+            match = re.search(r'<div[^>]*class="[^"]*lyricsh[^"]*"[^>]*>(.*?)</div>', r.text, re.DOTALL)
+            if match:
+                raw = match.group(1)
+                raw = re.sub(r'<[^>]+>', '', raw)
+                raw = re.sub(r'\n{3,}', '\n\n', raw).strip()
+                if raw:
+                    return raw
+    except:
+        pass
+
+    # 5) Musixmatch (via API - you need API key)
+    # Uncomment if you have an API key
+    # try:
+    #     api_key = "YOUR_MUSIXMATCH_API_KEY"
+    #     url = f"https://api.musixmatch.com/ws/1.1/matcher.lyrics.get?q_track={requests.utils.quote(title)}&q_artist={requests.utils.quote(artist)}&apikey={api_key}"
+    #     r = requests.get(url, timeout=8)
+    #     if r.status_code == 200:
+    #         data = r.json()
+    #         if data.get("message", {}).get("body", {}).get("lyrics", {}).get("lyrics_body"):
+    #             return data["message"]["body"]["lyrics"]["lyrics_body"]
+    # except:
+    #     pass
+
     return f"🎵 *{title}* — *{artist}*\n\n_Lyrics not found in our databases._"
 
 # ===== START COMMAND =====
@@ -288,7 +318,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ref = int(context.args[0])
         except:
             pass
-    
+
     user = get_user(user_id)
     if user and user[5] is None and ref and ref != user_id:
         cursor.execute("UPDATE users SET referrer=? WHERE id=?", (ref, user_id))
@@ -373,7 +403,7 @@ async def show_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
     points = user[1] if user else 0
     downloads = user[3] if user else 0
     premium_status = "💎 Active" if is_premium(user) else "❌ Inactive"
-    
+
     text = f"""
 👤 *Your Account*
 
@@ -394,7 +424,7 @@ _Invite friends and earn 10 points each!_
 async def show_referral(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     link = f"https://t.me/{BOT_USERNAME}?start={user_id}"
-    
+
     text = f"""
 🔗 *Your Referral Link*
 
@@ -443,7 +473,7 @@ _More bots coming soon!_
 async def show_premium(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user = get_user(user_id)
-    
+
     if is_premium(user):
         expire = "N/A"
         if user[2]:
@@ -539,7 +569,7 @@ async def song_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     msg = await update.message.reply_text("🔎 *Searching...*", parse_mode=ParseMode.MARKDOWN)
     results = await asyncio.get_event_loop().run_in_executor(None, search_music, query)
-    
+
     if not results:
         await msg.edit_text(
             "❌ *No results found.*\n\n💡 Try different keywords or artist name.",
@@ -571,7 +601,7 @@ async def song_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await q.answer()
     chat_id = q.message.chat_id
     index = int(q.data.split("_")[1])
-    
+
     results = search_cache.get(chat_id)
     if not results or index >= len(results):
         await q.edit_message_text("⚠️ Song expired. Please search again.")
@@ -579,7 +609,7 @@ async def song_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     video = results[index]
     duration = f"{video['duration']//60}:{video['duration']%60:02d}" if video.get('duration') else "N/A"
-    
+
     caption = f"""
 🎵 *{video['title'][:100]}*
 
@@ -608,36 +638,36 @@ async def download_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     user_id = q.from_user.id
     chat_id = q.message.chat_id
     index = int(q.data.split("_")[2])
-    
+
     user = get_user(user_id)
     reset_downloads(user)
-    
+
     if not is_premium(user) and (user[3] if user else 0) >= DOWNLOAD_LIMIT:
         await q.message.reply_text(
             "⛔ *Download Limit Reached!*\n\nUpgrade to Premium for unlimited downloads.",
             parse_mode=ParseMode.MARKDOWN
         )
         return
-    
+
     results = search_cache.get(chat_id)
     if not results or index >= len(results):
         await q.message.reply_text("⚠️ Song expired. Please search again.")
         return
-    
+
     video = results[index]
     status_msg = await q.message.reply_text(
         f"⬇️ *{'Audio' if audio_only else 'Video'} download in progress...* Please wait.",
         parse_mode=ParseMode.MARKDOWN
     )
-    
+
     try:
         file_path = await download_media_async(video["id"], video["title"], audio_only=audio_only)
         if not file_path or not file_path.exists():
             await status_msg.edit_text("❌ *Download failed.*\n\nPlease try again or contact support.", parse_mode=ParseMode.MARKDOWN)
             return
-        
+
         await status_msg.edit_text("📤 *Uploading...*", parse_mode=ParseMode.MARKDOWN)
-        
+
         if audio_only:
             with open(file_path, "rb") as f:
                 await q.message.reply_audio(
@@ -656,12 +686,12 @@ async def download_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, 
                     parse_mode=ParseMode.MARKDOWN,
                     supports_streaming=True
                 )
-        
+
         file_path.unlink(missing_ok=True)
         increment_downloads(user_id)
         add_points(user_id, 1)
         await status_msg.delete()
-        
+
     except Exception as e:
         print(f"Download error: {e}")
         await status_msg.edit_text(f"❌ *Download Error*\n\n`{str(e)[:200]}`", parse_mode=ParseMode.MARKDOWN)
@@ -672,22 +702,22 @@ async def lyrics_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await q.answer("📜 Fetching lyrics...")
     chat_id = q.message.chat_id
     index = int(q.data.split("_")[1])
-    
+
     results = search_cache.get(chat_id)
     if not results or index >= len(results):
         await q.message.reply_text("⚠️ Song expired. Please search again.")
         return
-    
+
     video = results[index]
     status = await q.message.reply_text("🔎 *Searching lyrics...*", parse_mode=ParseMode.MARKDOWN)
-    
+
     title = video["title"]
     artist = video.get("uploader", "")
     lyrics = await asyncio.get_event_loop().run_in_executor(None, fetch_lyrics, title, artist)
-    
+
     if len(lyrics) > 4000:
         lyrics = lyrics[:3997] + "..."
-    
+
     await status.delete()
     await q.message.reply_text(
         f"🎵 *{video['title'][:100]}*\n\n📜 *Lyrics:*\n\n```\n{lyrics}\n```",
@@ -705,12 +735,12 @@ async def more_tracks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await q.answer()
     chat_id = q.message.chat_id
     offset = int(q.data.split("_")[1])
-    
+
     results = search_cache.get(chat_id)
     if not results:
         await q.edit_message_text("⚠️ Search expired. Please search again.")
         return
-    
+
     keyboard = []
     for i in range(offset, min(offset + 20, len(results))):
         r = results[i]
@@ -720,7 +750,7 @@ async def more_tracks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if offset + 20 < len(results):
         keyboard.append([InlineKeyboardButton("➕ More Results", callback_data=f"more_{offset+20}")])
     keyboard.append([InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_menu")])
-    
+
     await q.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
 
 # ===== PAGE NAVIGATION =====
@@ -728,12 +758,12 @@ async def page_navigation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     chat_id = q.message.chat_id
-    
+
     results = search_cache.get(chat_id)
     if not results:
         await q.edit_message_text("⚠️ Search expired.")
         return
-    
+
     keyboard = []
     for i, r in enumerate(results[:20]):
         duration = f" ⏱{r['duration']//60}:{r['duration']%60:02d}" if r.get('duration') else ""
@@ -742,7 +772,7 @@ async def page_navigation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(results) > 20:
         keyboard.append([InlineKeyboardButton("➕ More Results", callback_data="more_20")])
     keyboard.append([InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_menu")])
-    
+
     await q.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
 
 # ===== TREND SONG =====
@@ -750,9 +780,9 @@ async def trend_song(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     video_id = q.data.split("_", 1)[1]
-    
+
     msg = await q.message.reply_text("🔎 *Loading...*", parse_mode=ParseMode.MARKDOWN)
-    
+
     try:
         opts = get_ydl_opts(audio_only=False)
         opts["extract_flat"] = True
@@ -849,15 +879,15 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message.reply_to_message:
         await update.message.reply_text("📢 Reply to a message (text/photo/video) to broadcast.")
         return
-    
+
     msg = update.message.reply_to_message
     cursor.execute("SELECT id FROM users")
     users = [u[0] for u in cursor.fetchall()]
     delivered = 0
     failed = 0
-    
+
     status = await update.message.reply_text(f"📢 Broadcasting to {len(users)} users...")
-    
+
     for u in users:
         try:
             if msg.text:
@@ -875,7 +905,7 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await asyncio.sleep(0.5)
         except:
             failed += 1
-    
+
     await status.edit_text(
         f"📢 *BROADCAST COMPLETE*\n\n"
         f"👥 Total: *{len(users)}*\n"
