@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
 """
-🎵 ADVANCED MUSIC BOT - FIXED
+🎵 ADVANCED MUSIC BOT - WITH FALLBACK DOWNLOADER APIs
 Created by ❦ ᴍʀ ᴅᴀʀᴋ<\\>ʜᴀᴄᴋᴇʀ 🫟
 """
 
@@ -15,6 +16,8 @@ import hashlib
 import time
 import asyncio
 import re
+import json
+import io
 from pathlib import Path
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
@@ -28,9 +31,10 @@ from telegram.ext import (
 )
 from telegram.constants import ParseMode
 
-TOKEN = "8350984585:AAFSm-9J9MTrwluT1WQk6eHhPplSoBR6c0k"
-OWNER_ID = 8854936887
-BOT_USERNAME = "All_MusicDownloader_Bot"
+# ===== CONFIG =====
+TOKEN = os.getenv("BOT_TOKEN", "8350984585:AAFSm-9J9MTrwluT1WQk6eHhPplSoBR6c0k")
+OWNER_ID = int(os.getenv("OWNER_ID", "8854936887"))
+BOT_USERNAME = os.getenv("BOT_USERNAME", "All_MusicDownloader_Bot")
 
 DOWNLOAD_LIMIT = 5
 COOLDOWN_HOURS = 24
@@ -38,13 +42,14 @@ COOLDOWN_HOURS = 24
 BASE_DIR = Path(__file__).parent.resolve()
 DOWNLOADS_DIR = BASE_DIR / "downloads"
 COOKIES_DIR = BASE_DIR / "cookies"
+THUMBNAILS_DIR = BASE_DIR / "thumbnails"
 
-for d in [DOWNLOADS_DIR, COOKIES_DIR]:
+for d in [DOWNLOADS_DIR, COOKIES_DIR, THUMBNAILS_DIR]:
     d.mkdir(parents=True, exist_ok=True)
 
 COOKIES_FILE = COOKIES_DIR / "cookies.txt"
 
-# DATABASE
+# ===== DATABASE =====
 db = sqlite3.connect("bot.db", check_same_thread=False)
 cursor = db.cursor()
 cursor.execute("""
@@ -58,24 +63,7 @@ referrer INTEGER
 )
 """)
 db.commit()
-
 search_cache = {}
-
-# ===== MAIN MENU REPLY KEYBOARD =====
-def get_main_menu_keyboard(user_id: int) -> ReplyKeyboardMarkup:
-    user = get_user(user_id)
-    points = user[1] if user else 0
-    downloads = user[3] if user else 0
-    premium_text = "💎 Premium" if is_premium(user) else "⭐ Upgrade"
-
-    keyboard = [
-        ["🎵 Search Music", "🔥 Trending"],
-        [f"📊 Account ({points} pts)", f"⬇️ {downloads}/{DOWNLOAD_LIMIT}"],
-        ["🔗 Referral", "🤖 Other Bots"],
-        [premium_text, "❓ Help"],
-        ["📞 Contact"]
-    ]
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
 # ===== USER FUNCTIONS =====
 def get_user(user_id):
@@ -95,8 +83,7 @@ def reset_downloads(user):
     try:
         last_reset = datetime.datetime.fromisoformat(user[4])
         now = datetime.datetime.now()
-        diff = now - last_reset
-        if diff.total_seconds() > COOLDOWN_HOURS * 3600:
+        if (now - last_reset).total_seconds() > COOLDOWN_HOURS * 3600:
             cursor.execute("UPDATE users SET downloads=0,last_reset=? WHERE id=?", (now.isoformat(), user[0]))
             db.commit()
             return True
@@ -121,46 +108,32 @@ def add_points(user_id, points):
     cursor.execute("UPDATE users SET points=points+? WHERE id=?", (points, user_id))
     db.commit()
 
-# ===== YT-DLP WITH COOKIES AND FIXED OPTIONS =====
-def get_ydl_opts(output_path=None, audio_only=True):
-    opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "noplaylist": True,
-        "geo_bypass": True,
-        "ignoreerrors": False,
-        "no_check_certificate": True,
-        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["android", "web"],
-                "skip": ["hls", "dash"]
-            }
-        }
-    }
+# ===== MAIN MENU REPLY KEYBOARD =====
+def get_main_menu_keyboard(user_id: int) -> ReplyKeyboardMarkup:
+    user = get_user(user_id)
+    points = user[1] if user else 0
+    downloads = user[3] if user else 0
+    premium_text = "💎 Premium" if is_premium(user) else "⭐ Upgrade"
+    keyboard = [
+        ["🎵 Search Music", "🔥 Trending"],
+        [f"📊 Account ({points} pts)", f"⬇️ {downloads}/{DOWNLOAD_LIMIT}"],
+        ["🔗 Referral", "🤖 Other Bots"],
+        [premium_text, "❓ Help"],
+        ["📞 Contact"]
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
-    if COOKIES_FILE.exists():
-        opts["cookies"] = str(COOKIES_FILE)
-
-    if audio_only:
-        opts["format"] = "bestaudio[ext=m4a]/bestaudio/best"
-        opts["postprocessors"] = [{
-            "key": "FFmpegExtractAudio",
-            "preferredcodec": "mp3",
-            "preferredquality": "192",
-        }]
-        opts["outtmpl"] = output_path or "%(title)s.%(ext)s"
-    else:
-        opts["format"] = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
-        opts["outtmpl"] = output_path or "%(title)s.%(ext)s"
-
-    return opts
-
+# ===== YT SEARCH =====
 def search_music(query, max_results=50):
     try:
-        opts = get_ydl_opts(audio_only=False)
-        opts["extract_flat"] = True
-        opts["playlistend"] = max_results
+        opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "extract_flat": True,
+            "playlistend": max_results,
+            "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "extractor_args": {"youtube": {"player_client": ["android"]}}
+        }
         with yt_dlp.YoutubeDL(opts) as ydl:
             result = ydl.extract_info(f"ytsearch{max_results}:{query}", download=False)
             entries = result.get("entries", []) if result else []
@@ -184,41 +157,97 @@ def search_music(query, max_results=50):
         print(f"Search error: {e}")
         return []
 
-async def download_media_async(video_id, title, audio_only=True):
+# ===== DOWNLOADER API FALLBACK CHAIN (Telegram version) =====
+def get_audio_download_url(youtube_url):
+    """Try multiple external APIs to get a direct download URL for audio."""
+    # list of API methods – each returns {'download': url, 'title': str} or raises
+    api_methods = [
+        {
+            "name": "EliteProTech",
+            "func": lambda: (lambda url: (
+                lambda r: (r.json() if r.status_code == 200 else {})
+            )(requests.get(f"https://eliteprotech-apis.zone.id/ytdown?url={url}&format=mp3", timeout=15))
+        ) (youtube_url)
+    },
+        {
+            "name": "Yupra",
+            "func": lambda: (lambda r: r.json() if r.status_code == 200 else {})(requests.get(f"https://api.yupra.my.id/api/downloader/ytmp3?url={youtube_url}", timeout=15))
+        },
+        {
+            "name": "Okatsu",
+            "func": lambda: (lambda r: r.json() if r.status_code == 200 else {})(requests.get(f"https://okatsu-rolezapiiz.vercel.app/downloader/ytmp3?url={youtube_url}", timeout=15))
+        },
+        {
+            "name": "Alya",
+            "func": lambda: (lambda r: r.json() if r.status_code == 200 else {})(requests.get(f"https://api.alyachan.pro/api/ytmp3?url={youtube_url}&apikey=G7I6X7", timeout=15))
+        },
+        {
+            "name": "Vreden",
+            "func": lambda: (lambda r: r.json() if r.status_code == 200 else {})(requests.get(f"https://api.vreden.my.id/api/ytmp3?url={youtube_url}", timeout=15))
+        }
+    ]
+
+    for method in api_methods:
+        try:
+            data = method["func"]()
+            # Normalize each API's response to a common format
+            if method["name"] == "EliteProTech":
+                if data.get("success") and data.get("downloadURL"):
+                    return data["downloadURL"], data.get("title", "")
+            elif method["name"] == "Yupra":
+                if data.get("success") and data.get("data", {}).get("download_url"):
+                    return data["data"]["download_url"], data["data"].get("title", "")
+            elif method["name"] == "Okatsu":
+                if data.get("dl"):
+                    return data["dl"], data.get("title", "")
+            elif method["name"] == "Alya":
+                if data.get("status") and data.get("data", {}).get("url"):
+                    return data["data"]["url"], data["data"].get("title", "")
+            elif method["name"] == "Vreden":
+                if data.get("status") and data.get("result", {}).get("download", {}).get("url"):
+                    return data["result"]["download"]["url"], data["result"]["metadata"].get("title", "")
+        except Exception as e:
+            print(f"{method['name']} failed: {e}")
+    raise Exception("All downloader APIs failed")
+
+# ===== ASYNC DOWNLOAD =====
+async def download_audio_async(video_id, title, youtube_url):
     loop = asyncio.get_event_loop()
     file_id = hashlib.md5(f"{video_id}{time.time()}".encode()).hexdigest()[:12]
-    ext = "mp3" if audio_only else "mp4"
-    output_path = str(DOWNLOADS_DIR / f"{file_id}.%(ext)s")
+    out_path = DOWNLOADS_DIR / f"{file_id}.mp3"
 
     def _download():
         try:
-            opts = get_ydl_opts(output_path=output_path, audio_only=audio_only)
-            url = f"https://youtube.com/watch?v={video_id}"
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                ydl.download([url])
-            for f in DOWNLOADS_DIR.glob(f"{file_id}.*"):
-                if audio_only:
-                    if f.suffix in [".mp3", ".m4a", ".webm", ".opus"]:
-                        return f
-                else:
-                    if f.suffix in [".mp4", ".mkv", ".webm"]:
-                        return f
-            return None
+            # Get download URL from fallback APIs
+            download_url, final_title = get_audio_download_url(youtube_url)
+            # Download the binary audio
+            r = requests.get(download_url, timeout=60, stream=True)
+            if r.status_code != 200:
+                raise Exception("Download URL returned non-200")
+            with open(out_path, "wb") as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            # Verify file size > 50KB
+            if out_path.stat().st_size < 50 * 1024:
+                raise Exception("Downloaded file too small (invalid)")
+            return out_path, final_title or title
         except Exception as e:
             print(f"Download error: {e}")
-            raise
+            return None, None
 
     try:
         result = await asyncio.wait_for(loop.run_in_executor(None, _download), timeout=120.0)
-        return result
+        if result[0] and result[0].exists():
+            return result
+        return None, None
     except asyncio.TimeoutError:
         print("Download timed out")
-        return None
+        return None, None
     except Exception as e:
         print(f"Download crashed: {e}")
-        return None
+        return None, None
 
-# ===== LYRICS - MULTIPLE SOURCES =====
+# ===== LYRICS (multi-source) =====
 def fetch_lyrics(title, artist=""):
     title = title.strip()
     artist = artist.strip()
@@ -294,22 +323,11 @@ def fetch_lyrics(title, artist=""):
     except:
         pass
 
-    # 5) Musixmatch (via API - you need API key)
-    # Uncomment if you have an API key
-    # try:
-    #     api_key = "YOUR_MUSIXMATCH_API_KEY"
-    #     url = f"https://api.musixmatch.com/ws/1.1/matcher.lyrics.get?q_track={requests.utils.quote(title)}&q_artist={requests.utils.quote(artist)}&apikey={api_key}"
-    #     r = requests.get(url, timeout=8)
-    #     if r.status_code == 200:
-    #         data = r.json()
-    #         if data.get("message", {}).get("body", {}).get("lyrics", {}).get("lyrics_body"):
-    #             return data["message"]["body"]["lyrics"]["lyrics_body"]
-    # except:
-    #     pass
-
     return f"🎵 *{title}* — *{artist}*\n\n_Lyrics not found in our databases._"
 
-# ===== START COMMAND =====
+# ===== TELEGRAM HANDLERS =====
+
+# ---- START ----
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     ref = None
@@ -343,7 +361,7 @@ I can help you find and download music from YouTube.
 ✨ *Features:*
 • 🎵 Search any song
 • ⬇️ Download MP3 audio
-• 🎬 Download video (MP4)
+• 🎬 Download video (MP4) – coming soon
 • 📜 Get song lyrics
 • 🔗 Refer friends & earn points
 • 💎 Premium for unlimited downloads
@@ -356,7 +374,7 @@ I can help you find and download music from YouTube.
         reply_markup=get_main_menu_keyboard(user_id)
     )
 
-# ===== MENU BUTTON HANDLER =====
+# ---- MENU BUTTONS ----
 async def handle_menu_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     text = update.message.text
@@ -395,7 +413,7 @@ async def handle_menu_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE
     else:
         await song_search(update, context)
 
-# ===== ACCOUNT =====
+# ---- ACCOUNT ----
 async def show_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user = get_user(user_id)
@@ -420,11 +438,10 @@ _Invite friends and earn 10 points each!_
         reply_markup=get_main_menu_keyboard(user_id)
     )
 
-# ===== REFERRAL =====
+# ---- REFERRAL ----
 async def show_referral(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     link = f"https://t.me/{BOT_USERNAME}?start={user_id}"
-
     text = f"""
 🔗 *Your Referral Link*
 
@@ -446,7 +463,7 @@ _Tap and hold to copy the link_
         ])
     )
 
-# ===== OTHER BOTS =====
+# ---- OTHER BOTS ----
 async def show_other_bots(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = """
 🤖 *Our Other Bots*
@@ -469,11 +486,10 @@ _More bots coming soon!_
         reply_markup=get_main_menu_keyboard(update.effective_user.id)
     )
 
-# ===== PREMIUM =====
+# ---- PREMIUM ----
 async def show_premium(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user = get_user(user_id)
-
     if is_premium(user):
         expire = "N/A"
         if user[2]:
@@ -490,7 +506,6 @@ async def show_premium(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • ⬇️ 50 downloads per day
 • 🚀 Priority download speed
 • 🎵 HD audio quality
-• 🎬 Video downloads included
 • 🚫 No cooldown periods
 
 📞 *Contact @Mr_Unique_Hacker001 to upgrade!*
@@ -501,7 +516,7 @@ async def show_premium(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=get_main_menu_keyboard(user_id)
     )
 
-# ===== HELP =====
+# ---- HELP ----
 async def show_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = """
 ❓ *Help Guide*
@@ -509,7 +524,7 @@ async def show_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
 *How to use:*
 1. Send a song name or artist
 2. Click on a result
-3. Choose Download Audio, Download Video, or Lyrics
+3. Choose Download Audio, Download Video (coming soon), or Lyrics
 
 *Commands:*
 /start - Start the bot
@@ -520,7 +535,7 @@ async def show_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
 *Premium Benefits:*
 • 50 downloads per day
 • No cooldown
-• HD quality audio & video
+• HD quality audio
 
 _Contact @Mr_Unique_Hacker001 for premium_
 """
@@ -530,7 +545,7 @@ _Contact @Mr_Unique_Hacker001 for premium_
         reply_markup=get_main_menu_keyboard(update.effective_user.id)
     )
 
-# ===== CONTACT =====
+# ---- CONTACT ----
 async def show_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("📩 Telegram", url="https://t.me/Mr_Unique_Hacker001")],
@@ -542,7 +557,7 @@ async def show_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-# ===== TRENDING =====
+# ---- TRENDING ----
 async def show_trending(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("🔥 Calm Down - Rema", callback_data="trend_CQL_2lDzBXs")],
@@ -559,7 +574,7 @@ async def show_trending(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-# ===== SONG SEARCH =====
+# ---- SONG SEARCH ----
 async def song_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     query = update.message.text.strip()
@@ -595,7 +610,7 @@ async def song_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-# ===== SONG INFO =====
+# ---- SONG INFO ----
 async def song_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
@@ -621,7 +636,6 @@ Choose an action:
 """
     keyboard = [
         [InlineKeyboardButton("⬇️ Download Audio", callback_data=f"download_audio_{index}")],
-        [InlineKeyboardButton("🎬 Download Video", callback_data=f"download_video_{index}")],
         [InlineKeyboardButton("📜 Lyrics", callback_data=f"lyrics_{index}")],
         [InlineKeyboardButton("🔙 Back to Results", callback_data=f"page_0")]
     ]
@@ -631,13 +645,13 @@ Choose an action:
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-# ===== DOWNLOAD =====
-async def download_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, audio_only: bool):
+# ---- DOWNLOAD AUDIO (with fallback APIs) ----
+async def download_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer("⬇️ Starting download...")
     user_id = q.from_user.id
     chat_id = q.message.chat_id
-    index = int(q.data.split("_")[2])
+    index = int(q.data.split("_")[2])  # download_audio_0
 
     user = get_user(user_id)
     reset_downloads(user)
@@ -655,37 +669,25 @@ async def download_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         return
 
     video = results[index]
-    status_msg = await q.message.reply_text(
-        f"⬇️ *{'Audio' if audio_only else 'Video'} download in progress...* Please wait.",
-        parse_mode=ParseMode.MARKDOWN
-    )
+    status_msg = await q.message.reply_text("⬇️ *Download in progress...* Please wait.", parse_mode=ParseMode.MARKDOWN)
 
     try:
-        file_path = await download_media_async(video["id"], video["title"], audio_only=audio_only)
+        file_path, final_title = await download_audio_async(video["id"], video["title"], video["url"])
         if not file_path or not file_path.exists():
-            await status_msg.edit_text("❌ *Download failed.*\n\nPlease try again or contact support.", parse_mode=ParseMode.MARKDOWN)
+            await status_msg.edit_text("❌ *Download failed.*\n\nAll downloader APIs are currently unavailable. Please try again later.", parse_mode=ParseMode.MARKDOWN)
             return
 
         await status_msg.edit_text("📤 *Uploading...*", parse_mode=ParseMode.MARKDOWN)
 
-        if audio_only:
-            with open(file_path, "rb") as f:
-                await q.message.reply_audio(
-                    audio=f,
-                    title=video["title"][:100],
-                    performer=video.get("uploader", "Unknown")[:100],
-                    duration=video.get("duration", 0),
-                    caption=f"🎵 *{video['title'][:100]}*\n\n✅ Audio downloaded successfully!",
-                    parse_mode=ParseMode.MARKDOWN
-                )
-        else:
-            with open(file_path, "rb") as f:
-                await q.message.reply_video(
-                    video=f,
-                    caption=f"🎬 *{video['title'][:100]}*\n\n✅ Video downloaded successfully!",
-                    parse_mode=ParseMode.MARKDOWN,
-                    supports_streaming=True
-                )
+        with open(file_path, "rb") as f:
+            await q.message.reply_audio(
+                audio=f,
+                title=final_title[:100],
+                performer=video.get("uploader", "Unknown")[:100],
+                duration=video.get("duration", 0),
+                caption=f"🎵 *{final_title[:100]}*\n\n✅ Audio downloaded successfully!",
+                parse_mode=ParseMode.MARKDOWN
+            )
 
         file_path.unlink(missing_ok=True)
         increment_downloads(user_id)
@@ -696,7 +698,7 @@ async def download_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         print(f"Download error: {e}")
         await status_msg.edit_text(f"❌ *Download Error*\n\n`{str(e)[:200]}`", parse_mode=ParseMode.MARKDOWN)
 
-# ===== LYRICS =====
+# ---- LYRICS ----
 async def lyrics_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer("📜 Fetching lyrics...")
@@ -724,12 +726,11 @@ async def lyrics_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("⬇️ Download Audio", callback_data=f"download_audio_{index}")],
-            [InlineKeyboardButton("🎬 Download Video", callback_data=f"download_video_{index}")],
             [InlineKeyboardButton("🔙 Back to Results", callback_data=f"page_0")]
         ])
     )
 
-# ===== MORE TRACKS =====
+# ---- MORE TRACKS ----
 async def more_tracks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
@@ -753,7 +754,7 @@ async def more_tracks(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await q.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
 
-# ===== PAGE NAVIGATION =====
+# ---- PAGE NAVIGATION ----
 async def page_navigation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
@@ -775,7 +776,7 @@ async def page_navigation(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await q.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
 
-# ===== TREND SONG =====
+# ---- TREND SONG ----
 async def trend_song(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
@@ -784,8 +785,12 @@ async def trend_song(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = await q.message.reply_text("🔎 *Loading...*", parse_mode=ParseMode.MARKDOWN)
 
     try:
-        opts = get_ydl_opts(audio_only=False)
-        opts["extract_flat"] = True
+        # Use yt-dlp to get info directly
+        opts = {
+            "quiet": True,
+            "extract_flat": True,
+            "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(f"https://youtube.com/watch?v={video_id}", download=False)
             if info:
@@ -811,7 +816,6 @@ Choose an action:
 """
                 keyboard = [
                     [InlineKeyboardButton("⬇️ Download Audio", callback_data="download_audio_0")],
-                    [InlineKeyboardButton("🎬 Download Video", callback_data="download_video_0")],
                     [InlineKeyboardButton("📜 Lyrics", callback_data="lyrics_0")],
                     [InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_menu")]
                 ]
@@ -822,7 +826,7 @@ Choose an action:
         print(f"Trend song error: {e}")
         await msg.edit_text(f"❌ Error: {str(e)[:200]}")
 
-# ===== BACK TO MENU =====
+# ---- BACK TO MENU ----
 async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
@@ -926,46 +930,47 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             pass
 
-# ===== RUN BOT =====
-print("""
+# ===== MAIN =====
+def main():
+    print("""
 ╔══════════════════════════════════════════════════════════════╗
 ║           🎵 ADVANCED MUSIC BOT 🎵                           ║
 ║   Created by ❦ ᴍʀ ᴅᴀʀᴋ<\\>ʜᴀᴄᴋᴇʀ 🫟                        ║
 ╚══════════════════════════════════════════════════════════════╝
-""")
+    """)
+    if not COOKIES_FILE.exists():
+        print(f"⚠️ No cookie file found at: {COOKIES_FILE}")
+        print("   (Not required with fallback APIs, but may help)\n")
+    print("🤖 Bot is running... Press Ctrl+C to stop.\n")
 
-if not COOKIES_FILE.exists():
-    print(f"⚠️ No cookie file found at: {COOKIES_FILE}")
-    print("   YouTube downloads may be blocked.\n")
+    app = Application.builder().token(TOKEN).build()
 
-print("🤖 Bot is running... Press Ctrl+C to stop.\n")
+    # COMMANDS
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("account", show_account))
+    app.add_handler(CommandHandler("premium", premium))
+    app.add_handler(CommandHandler("reward", reward))
+    app.add_handler(CommandHandler("stats", stats))
+    app.add_handler(CommandHandler("trending", show_trending))
+    app.add_handler(CommandHandler("broadcast", broadcast))
+    app.add_handler(CommandHandler("help", show_help))
 
-app = Application.builder().token(TOKEN).build()
+    # MESSAGE HANDLER - menu buttons
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_menu_buttons))
 
-# COMMANDS
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("account", show_account))
-app.add_handler(CommandHandler("premium", premium))
-app.add_handler(CommandHandler("reward", reward))
-app.add_handler(CommandHandler("stats", stats))
-app.add_handler(CommandHandler("trending", show_trending))
-app.add_handler(CommandHandler("broadcast", broadcast))
-app.add_handler(CommandHandler("help", show_help))
+    # CALLBACKS
+    app.add_handler(CallbackQueryHandler(back_to_menu, pattern="^back_to_menu$"))
+    app.add_handler(CallbackQueryHandler(song_info, pattern="^song_"))
+    app.add_handler(CallbackQueryHandler(download_callback, pattern="^download_audio_"))
+    app.add_handler(CallbackQueryHandler(lyrics_callback, pattern="^lyrics_"))
+    app.add_handler(CallbackQueryHandler(more_tracks, pattern="^more_"))
+    app.add_handler(CallbackQueryHandler(page_navigation, pattern="^page_"))
+    app.add_handler(CallbackQueryHandler(trend_song, pattern="^trend_"))
 
-# MESSAGE HANDLER - handles text and menu buttons
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_menu_buttons))
+    # ERROR HANDLER
+    app.add_error_handler(error_handler)
 
-# CALLBACK HANDLERS
-app.add_handler(CallbackQueryHandler(back_to_menu, pattern="^back_to_menu$"))
-app.add_handler(CallbackQueryHandler(song_info, pattern="^song_"))
-app.add_handler(CallbackQueryHandler(lambda u,c: download_callback(u,c,True), pattern="^download_audio_"))
-app.add_handler(CallbackQueryHandler(lambda u,c: download_callback(u,c,False), pattern="^download_video_"))
-app.add_handler(CallbackQueryHandler(lyrics_callback, pattern="^lyrics_"))
-app.add_handler(CallbackQueryHandler(more_tracks, pattern="^more_"))
-app.add_handler(CallbackQueryHandler(page_navigation, pattern="^page_"))
-app.add_handler(CallbackQueryHandler(trend_song, pattern="^trend_"))
+    app.run_polling(allowed_updates=Update.ALL_TYPES)
 
-# ERROR HANDLER
-app.add_error_handler(error_handler)
-
-app.run_polling(allowed_updates=Update.ALL_TYPES)
+if __name__ == "__main__":
+    main()
