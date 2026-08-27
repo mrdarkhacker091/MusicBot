@@ -42,10 +42,7 @@ from telegram.constants import ParseMode
 
 # ===== CONFIGURATION =====
 # Get token from environment (set in Render dashboard or .env file)
-TOKEN = os.getenv("BOT_TOKEN")
-if not TOKEN:
-    raise ValueError("❌ BOT_TOKEN environment variable not set! Set it in Render dashboard or create a .env file.")
-
+TOKEN = "8350984585:AAFSm-9J9MTrwluT1WQk6eHhPplSoBR6c0k"
 OWNER_ID = int(os.getenv("OWNER_ID", "8854936887"))
 BOT_USERNAME = os.getenv("BOT_USERNAME", "All_MusicDownloader_Bot")
 
