@@ -78,7 +78,7 @@ SOCIAL_DOMAINS = {
     "x.com", "www.x.com", "twitter.com", "www.twitter.com",
     "reddit.com", "www.reddit.com", "redd.it"
 }
-URL_PATTERN = re.compile(r"https?://[^\s<>"]+", re.IGNORECASE)
+URL_PATTERN = re.compile(r'https?://[^s<>"]+', re.IGNORECASE)
 
 def get_user(user_id):
     cursor.execute("SELECT * FROM users WHERE id=?", (user_id,))
