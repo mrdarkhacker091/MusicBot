@@ -662,9 +662,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 ref_name = ref_user.first_name or "User"
                 await context.bot.send_message(
                     ref,
-                    safe_sc(f"🎉 ʜᴇʏ {ref_name}!\n\nʏᴏᴜ ᴊᴜsᴛ ɢᴏᴛ ᴀ ɴᴇᴡ ʀᴇғᴇʀʀᴀʟ!\n\n"
-                            f"👤 ɴᴀᴍᴇ: {user.first_name or 'Unknown'}\n"
-                            f"📛 ᴜsᴇʀɴᴀᴍᴇ: @{user.username or 'None'}\n"
+                    safe_sc(f"🎉 ʜᴇʏ {h(ref_name)}!\n\nʏᴏᴜ ᴊᴜsᴛ ɢᴏᴛ ᴀ ɴᴇᴡ ʀᴇғᴇʀʀᴀʟ!\n\n"
+                            f"👤 ɴᴀᴍᴇ: {h(user.first_name or 'Unknown')}\n"
+                            f"📛 ᴜsᴇʀɴᴀᴍᴇ: @{h(user.username or 'None')}\n"
                             f"🆔 ᴜsᴇʀ ɪᴅ: {user_id}\n"
                             f"📅 ᴅᴀᴛᴇ: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
                             f"✅ ʏᴏᴜ ᴇᴀʀɴᴇᴅ +{POINTS_PER_REFERRAL} ᴘᴏɪɴᴛs!"),
@@ -687,14 +687,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             f"📛 ᴜsᴇʀɴᴀᴍᴇ: @{h(user.username)}\n"
             f"🆔 ᴜsᴇʀ ɪᴅ: {user_id}\n"
             f"📅 ᴅᴀᴛᴇ: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-            f"👥 ʀᴇғᴇʀʀᴇᴅ ʙʏ: {ref_by}\n\n"
+            f"👥 ʀᴇғᴇʀʀᴇᴅ ʙʏ: {h(ref_by)}\n\n"
             f"🤖 <a href=\"https://t.me/{BOT_USERNAME}?start={user_id}\">sᴛᴀʀᴛ ʙᴏᴛ</a>"
         )
 
     text = safe_sc(f"""
 🎵 ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ ᴀᴅᴠᴀɴᴄᴇᴅ ᴍᴜsɪᴄ ʙᴏᴛ!
 
-👋 ʜɪ {user.first_name or 'ғʀɪᴇɴᴅ'}!
+👋 ʜɪ {h(user.first_name or 'ғʀɪᴇɴᴅ')}!
 
 ɪ ᴄᴀɴ ʜᴇʟᴘ ʏᴏᴜ ғɪɴᴅ ᴀɴᴅ ᴅᴏᴡɴʟᴏᴀᴅ ᴍᴜsɪᴄ ғʀᴏᴍ ʏᴏᴜᴛᴜʙᴇ.
 
